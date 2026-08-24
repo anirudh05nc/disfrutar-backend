@@ -9,7 +9,11 @@ from pydantic import BaseModel
 import boto3
 from botocore.exceptions import ClientError
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
+)
 
 origins = [
     "https://outbreak.gfgkare.in",
