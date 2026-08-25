@@ -452,8 +452,8 @@ def reset_timer():
 def generate_upload_url(req: CertificateUploadRequest):
     try:
         # Validate certificate type
-        if req.cert_type not in ["mongoDB", "Cloud"]:
-            raise HTTPException(status_code=400, detail="Invalid certificate type. Must be 'mongoDB' or 'Cloud'.")
+        if req.cert_type != "Data Analytics Essentials":
+            raise HTTPException(status_code=400, detail="Invalid certificate type. Must be 'Data Analytics Essentials'.")
 
         # Get team item to extract registration ID and current certificates count
         res = table.get_item(Key={'TeamID': req.team_id})
