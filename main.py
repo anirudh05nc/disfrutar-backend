@@ -1,7 +1,7 @@
 import os
 import csv
 import time
-from typing import List
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,7 +54,7 @@ class CertificateUploadRequest(BaseModel):
     team_id: str
     member_name: str
     file_name: str
-    cert_type: str
+    cert_type: Optional[str] = "Data Analytics Essentials"
 
 
 class ProblemSelection(BaseModel):
@@ -452,8 +452,10 @@ def reset_timer():
 def generate_upload_url(req: CertificateUploadRequest):
     try:
         # Validate certificate type
-        if req.cert_type != "Data Analytics Essentials":
-            raise HTTPException(status_code=400, detail="Invalid certificate type. Must be 'Data Analytics Essentials'.")
+        cert_type = req.cert_type or "Data Analytics Essentials"
+        allowed_types = ["Data Analytics Essentials", "mongoDB", "Cloud"]
+        if cert_type not in allowed_types:
+            raise HTTPException(status_code=400, detail=f"Invalid certificate type. Must be 'Data Analytics Essentials', 'mongoDB', or 'Cloud'.")
 
         # Get team item to extract registration ID and current certificates count
         res = table.get_item(Key={'TeamID': req.team_id})
@@ -487,7 +489,7 @@ def generate_upload_url(req: CertificateUploadRequest):
             existing_certs = []
             
         # Construct the key according to the schema: certificates/team_{TeamId}/{RegNo}_{CertType}.pdf
-        s3_key = f"certificates/team_{req.team_id}/{reg_no}_{req.cert_type}.pdf"
+        s3_key = f"certificates/team_{req.team_id}/{reg_no}_{cert_type}.pdf"
         
         # Limit checking and updating DB references
         if s3_key not in existing_certs:
