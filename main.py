@@ -17,6 +17,16 @@ app = FastAPI(
 
 origins = [
     "https://outbreak.gfgkare.in",
+    "http://localhost",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://localhost:4173",
+    "http://127.0.0.1",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:4173",
 ]
 
 # Enable CORS for frontend integration
@@ -79,6 +89,9 @@ class ToggleDeleteProtectionRequest(BaseModel):
 
 class ToggleFeedbackRequest(BaseModel):
     enabled: bool
+
+class ToggleDisplayModeRequest(BaseModel):
+    display_mode: str
 
 class UpdatePhaseRequest(BaseModel):
     phase_index: int
@@ -282,6 +295,8 @@ def get_settings():
                 'TimerDuration': 0,
                 'DeleteProtectionActive': False,
                 'ProblemsCsvUploaded': False,
+                'ProblemDisplayMode': 'title',
+                'FeedbackEnabled': False,
                 'CurrentPhaseIndex': 0,
                 'Announcements': []
             }
@@ -293,6 +308,7 @@ def get_settings():
                 'TimerDuration': 0,
                 'DeleteProtectionActive': False,
                 'ProblemsCsvUploaded': False,
+                'ProblemDisplayMode': 'title',
                 'FeedbackEnabled': False,
                 'CurrentPhaseIndex': 0,
                 'Announcements': [],
@@ -305,6 +321,7 @@ def get_settings():
             'TimerDuration': int(item.get('TimerDuration', 0)),
             'DeleteProtectionActive': item.get('DeleteProtectionActive', False),
             'ProblemsCsvUploaded': item.get('ProblemsCsvUploaded', False),
+            'ProblemDisplayMode': item.get('ProblemDisplayMode', 'title'),
             'FeedbackEnabled': item.get('FeedbackEnabled', False),
             'CurrentPhaseIndex': int(item.get('CurrentPhaseIndex', 0)),
             'Announcements': item.get('Announcements', []),
@@ -446,6 +463,29 @@ def reset_timer():
         return {"message": "Timer reset successfully."}
     except ClientError as e:
         raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
+
+
+@app.post("/settings/toggle-display-mode")
+def toggle_display_mode(req: ToggleDisplayModeRequest):
+    """
+    Admin endpoint to change problem statement selection display mode:
+    - 'title': Shows only problem titles during selection.
+    - 'number': Shows only problem numbers (blind/mystery track) during selection.
+    Full details appear in the team dashboard after selection is confirmed.
+    """
+    try:
+        mode = req.display_mode.lower().strip()
+        if mode not in ["title", "number"]:
+            raise HTTPException(status_code=400, detail="Invalid display mode. Must be 'title' or 'number'.")
+        table.update_item(
+            Key={'TeamID': 'SYSTEM_SETTINGS'},
+            UpdateExpression="set ProblemDisplayMode = :val",
+            ExpressionAttributeValues={':val': mode}
+        )
+        return {"message": f"Display mode successfully updated to '{mode}'.", "display_mode": mode}
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
+
 
 
 @app.post("/api/certificates/generate-upload-url")
