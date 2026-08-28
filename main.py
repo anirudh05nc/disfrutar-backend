@@ -90,8 +90,8 @@ class ToggleDeleteProtectionRequest(BaseModel):
 class ToggleFeedbackRequest(BaseModel):
     enabled: bool
 
-class ToggleDisplayModeRequest(BaseModel):
-    display_mode: str
+class ProblemCsvDirectUploadRequest(BaseModel):
+    csv_content: str
 
 class UpdatePhaseRequest(BaseModel):
     phase_index: int
@@ -295,7 +295,6 @@ def get_settings():
                 'TimerDuration': 0,
                 'DeleteProtectionActive': False,
                 'ProblemsCsvUploaded': False,
-                'ProblemDisplayMode': 'title',
                 'FeedbackEnabled': False,
                 'CurrentPhaseIndex': 0,
                 'Announcements': []
@@ -308,7 +307,6 @@ def get_settings():
                 'TimerDuration': 0,
                 'DeleteProtectionActive': False,
                 'ProblemsCsvUploaded': False,
-                'ProblemDisplayMode': 'title',
                 'FeedbackEnabled': False,
                 'CurrentPhaseIndex': 0,
                 'Announcements': [],
@@ -321,7 +319,6 @@ def get_settings():
             'TimerDuration': int(item.get('TimerDuration', 0)),
             'DeleteProtectionActive': item.get('DeleteProtectionActive', False),
             'ProblemsCsvUploaded': item.get('ProblemsCsvUploaded', False),
-            'ProblemDisplayMode': item.get('ProblemDisplayMode', 'title'),
             'FeedbackEnabled': item.get('FeedbackEnabled', False),
             'CurrentPhaseIndex': int(item.get('CurrentPhaseIndex', 0)),
             'Announcements': item.get('Announcements', []),
@@ -463,29 +460,6 @@ def reset_timer():
         return {"message": "Timer reset successfully."}
     except ClientError as e:
         raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
-
-
-@app.post("/settings/toggle-display-mode")
-def toggle_display_mode(req: ToggleDisplayModeRequest):
-    """
-    Admin endpoint to change problem statement selection display mode:
-    - 'title': Shows only problem titles during selection.
-    - 'number': Shows only problem numbers (blind/mystery track) during selection.
-    Full details appear in the team dashboard after selection is confirmed.
-    """
-    try:
-        mode = req.display_mode.lower().strip()
-        if mode not in ["title", "number"]:
-            raise HTTPException(status_code=400, detail="Invalid display mode. Must be 'title' or 'number'.")
-        table.update_item(
-            Key={'TeamID': 'SYSTEM_SETTINGS'},
-            UpdateExpression="set ProblemDisplayMode = :val",
-            ExpressionAttributeValues={':val': mode}
-        )
-        return {"message": f"Display mode successfully updated to '{mode}'.", "display_mode": mode}
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
-
 
 
 @app.post("/api/certificates/generate-upload-url")
@@ -681,6 +655,36 @@ def purge_all_certificates(req: PurgeAllCertsRequest):
 PROBLEMS_CSV_S3_KEY = "problemstatements/problems.csv"
 
 
+@app.post("/api/problems/upload-direct")
+def upload_problems_csv_direct(req: ProblemCsvDirectUploadRequest):
+    """
+    Direct server-side upload of Problem Statements CSV to S3.
+    Bypasses browser-to-S3 CORS and signature restrictions.
+    """
+    try:
+        if not req.csv_content or not req.csv_content.strip():
+            raise HTTPException(status_code=400, detail="CSV content cannot be empty.")
+
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=PROBLEMS_CSV_S3_KEY,
+            Body=req.csv_content.encode('utf-8'),
+            ContentType='text/csv'
+        )
+
+        table.update_item(
+            Key={'TeamID': 'SYSTEM_SETTINGS'},
+            UpdateExpression="set ProblemsCsvUploaded = :val",
+            ExpressionAttributeValues={':val': True}
+        )
+        return {
+            "message": "Problem statements CSV uploaded successfully.",
+            "s3_key": PROBLEMS_CSV_S3_KEY
+        }
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
+
+
 @app.post("/api/problems/upload-csv")
 def get_problems_csv_upload_url():
     """
@@ -710,6 +714,26 @@ def get_problems_csv_upload_url():
             "message": "Presigned upload URL generated. Upload the CSV via PUT request to this URL."
         }
     except ClientError as e:
+        raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
+
+
+@app.get("/api/problems/raw-csv")
+def get_problems_raw_csv():
+    """
+    Directly streams or returns the Problem Statements CSV text from S3 via backend,
+    avoiding browser S3 CORS issues.
+    """
+    try:
+        response = s3_client.get_object(
+            Bucket=S3_BUCKET,
+            Key=PROBLEMS_CSV_S3_KEY
+        )
+        content = response['Body'].read().decode('utf-8')
+        return {"csv_content": content}
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', '')
+        if error_code == 'NoSuchKey':
+            raise HTTPException(status_code=404, detail="Problem statements CSV has not been uploaded yet.")
         raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
 
 
