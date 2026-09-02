@@ -16,13 +16,16 @@ app = FastAPI(
 )
 
 origins = [
-    "https://outbreak.gfgkare.in",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "https://disfrutar.gfgkare.in",
 ]
 
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,8 +41,24 @@ session = boto3.Session()
 
 dynamodb = boto3.resource('dynamodb', region_name='ap-south-2') # Change to your region
 
-TABLE_NAME = "outbreak26_teams"
+TABLE_NAME = os.environ.get("DYNAMODB_TABLE", "disfrutar26_teams")
 table = dynamodb.Table(TABLE_NAME)
+
+# Ensure DynamoDB table exists automatically
+try:
+    table.load()
+except ClientError as _ce:
+    if _ce.response.get('Error', {}).get('Code') == 'ResourceNotFoundException':
+        try:
+            table = dynamodb.create_table(
+                TableName=TABLE_NAME,
+                KeySchema=[{'AttributeName': 'TeamID', 'KeyType': 'HASH'}],
+                AttributeDefinitions=[{'AttributeName': 'TeamID', 'AttributeType': 'S'}],
+                BillingMode='PAY_PER_REQUEST'
+            )
+            table.wait_until_exists()
+        except Exception as _tb_err:
+            print(f"DynamoDB auto-create note: {_tb_err}")
 
 from botocore.config import Config
 s3_client = boto3.client(
@@ -48,7 +67,7 @@ s3_client = boto3.client(
     endpoint_url='https://s3.ap-south-2.amazonaws.com',
     config=Config(signature_version='s3v4')
 )
-S3_BUCKET = os.environ.get("S3_BUCKET", "outbreak26-certificates")
+S3_BUCKET = os.environ.get("S3_BUCKET", "disfrutar26-certificates")
 
 class CertificateUploadRequest(BaseModel):
     team_id: str
@@ -138,7 +157,7 @@ def read_root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Outbreak 26 API</title>
+        <title>Disfrutar 26 API</title>
         <meta charset="utf-8">  
         <style>
             body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
@@ -149,7 +168,7 @@ def read_root():
     </head>
     <body>
         <div class="container">
-            <h1>Outbreak 26</h1>
+            <h1>Disfrutar 26</h1>
             <p>API Server is active and running successfully.</p>
         </div>
     </body>
@@ -692,7 +711,7 @@ def get_problems_csv_upload_url():
             },
             ExpiresIn=3600
         )
-        # Mark as uploaded in system settings (optimistic — actual S3 write happens client-side)
+        # Mark as uploaded in system settings (optimistic â€” actual S3 write happens client-side)
         table.update_item(
             Key={'TeamID': 'SYSTEM_SETTINGS'},
             UpdateExpression="set ProblemsCsvUploaded = :val",
@@ -1104,7 +1123,7 @@ def initialize_teams():
         raise HTTPException(status_code=500, detail=f"Failed to write system settings: {str(e)}")
 
     # 2. Process CSV and group participants by TeamID
-    csv_file_path = "outbreak26_participants.csv"
+    csv_file_path = "disfrutar26_participants.csv"
     if not os.path.exists(csv_file_path):
         raise HTTPException(status_code=404, detail=f"File {csv_file_path} not found.")
 
