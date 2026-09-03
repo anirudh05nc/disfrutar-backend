@@ -20,6 +20,7 @@ origins = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "https://disfrutar.anc-anirudh.online",
+    "https://disfrutar-frontend.vercel.app",
 ]
 
 # Enable CORS for frontend integration
@@ -202,13 +203,17 @@ def get_single_item(partition_id: str):
     if partition_id == "SYSTEM_SETTINGS":
         raise HTTPException(status_code=404, detail="Team not found")
     try:
-        response = table.get_item(
-            Key={
-                'TeamID': partition_id
-            }
-        )
-        
+        response = table.get_item(Key={'TeamID': partition_id})
         item = response.get('Item')
+        if not item and partition_id != partition_id.upper():
+            response = table.get_item(Key={'TeamID': partition_id.upper()})
+            item = response.get('Item')
+        if not item:
+            scan_resp = table.scan()
+            for t in scan_resp.get('Items', []):
+                if t.get('TeamID', '').strip().upper() == partition_id.strip().upper():
+                    item = t
+                    break
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
             
@@ -222,34 +227,61 @@ def select_problem(team_id: str, selection: ProblemSelection):
     if team_id == "SYSTEM_SETTINGS":
         raise HTTPException(status_code=400, detail="Invalid team selection request")
     try:
+        # 1. Team lookup with case-insensitive fallback
         response = table.get_item(Key={'TeamID': team_id})
         team = response.get('Item')
+        if not team and team_id != team_id.upper():
+            response = table.get_item(Key={'TeamID': team_id.upper()})
+            team = response.get('Item')
+        if not team:
+            scan_resp = table.scan()
+            for item in scan_resp.get('Items', []):
+                if item.get('TeamID', '').strip().upper() == team_id.strip().upper():
+                    team = item
+                    team_id = item.get('TeamID')
+                    break
         if not team:
             raise HTTPException(status_code=404, detail="Team not found")
         
+        target_title = selection.problem_title.strip()
+        target_norm = target_title.lower()
+        
         current_selection = team.get('SelectedProblem')
         if current_selection:
-            if current_selection == selection.problem_title:
+            curr_norm = current_selection.strip().lower()
+            if curr_norm == target_norm or curr_norm == target_norm.replace('\r', '').replace('\n', ''):
                 return {"message": "Problem already selected and locked.", "selected_problem": current_selection}
-            raise HTTPException(status_code=400, detail="Challenge selection is locked and cannot be changed.")
+            # Return HTTP 400 with selected_problem field so frontend can auto-recover
+            raise HTTPException(
+                status_code=400,
+                detail=f"Challenge selection is locked to '{current_selection}' and cannot be changed."
+            )
         
+        # 2. Max 3 teams per problem statement capacity check
         scan_resp = table.scan()
         all_teams = scan_resp.get('Items', [])
-        count = sum(1 for t in all_teams if t.get('TeamID') != "SYSTEM_SETTINGS" and t.get('SelectedProblem') == selection.problem_title)
+        count = sum(
+            1 for t in all_teams 
+            if t.get('TeamID') != "SYSTEM_SETTINGS" 
+            and t.get('SelectedProblem') 
+            and t.get('SelectedProblem').strip().lower() == target_norm
+        )
         
         if count >= 3:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Challenge '{selection.problem_title}' is full. Maximum 3 teams allowed."
+                detail=f"Challenge '{target_title}' is full. Maximum 3 teams allowed."
             )
         
+        # 3. Lock selection in DynamoDB
+        actual_key = team.get('TeamID', team_id)
         table.update_item(
-            Key={'TeamID': team_id},
+            Key={'TeamID': actual_key},
             UpdateExpression="set SelectedProblem = :val",
-            ExpressionAttributeValues={':val': selection.problem_title}
+            ExpressionAttributeValues={':val': target_title}
         )
         
-        return {"message": "Problem selection locked successfully.", "selected_problem": selection.problem_title}
+        return {"message": "Problem selection locked successfully.", "selected_problem": target_title}
     except ClientError as e:
         raise HTTPException(status_code=500, detail=e.response['Error']['Message'])
 
