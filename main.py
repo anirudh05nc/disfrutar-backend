@@ -1060,7 +1060,7 @@ def import_data(req: ImportRequest):
             item_payload = {
                 'TeamID': t_id,
                 'Team Name': team.TeamName,
-                'Password': team.Password,
+                'Password': team.Password or t_id,
                 'Leader Name': leader_name,
                 'Leader Email': leader_email,
                 'Leader Phone': leader_phone,
