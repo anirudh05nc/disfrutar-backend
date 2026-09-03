@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import boto3
 from botocore.exceptions import ClientError
 
@@ -119,30 +119,40 @@ class FeedbackSubmissionRequest(BaseModel):
 
 class TeamImportItem(BaseModel):
     TeamID: str
-    TeamName: str
-    Password: str
-    LeaderName: str
-    LeaderEmail: str
-    LeaderPhone: str
-    LeaderRegNo: str
+    TeamName: str = ""
+    Password: str = ""
+    LeaderName: str = ""
+    LeaderEmail: str = ""
+    LeaderPhone: str = ""
+    LeaderRegNo: str = ""
     TransactionID: str = ""
     Status: str = "SUCCESS"
     SubmittedAt: str = ""
 
 class ParticipantImportItem(BaseModel):
     TeamId: str
-    Name: str
-    RegNo: str
-    Email: str
-    Phone: str
-    Gender: str
-    Branch: str
-    Year: int
+    Name: str = ""
+    RegNo: str = ""
+    Email: str = ""
+    Phone: str = ""
+    Gender: str = ""
+    Branch: str = ""
+    Year: Optional[int] = 0
     Accommodation: str = ""
     HostelName: str = ""
     RoomNo: str = ""
     WardenName: str = ""
     WardenPhone: str = ""
+
+    @field_validator('Year', mode='before')
+    @classmethod
+    def parse_year(cls, v):
+        if v is None or v == "":
+            return 0
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return 0
 
 class ImportRequest(BaseModel):
     teams: List[TeamImportItem]
@@ -1042,14 +1052,19 @@ def import_data(req: ImportRequest):
             except Exception:
                 pass
 
+            leader_name = team.LeaderName or (members[0]["name"] if members else "")
+            leader_email = team.LeaderEmail or (members[0]["email"] if members else "")
+            leader_phone = team.LeaderPhone or (members[0]["phone"] if members else "")
+            leader_reg_no = team.LeaderRegNo or (members[0]["regNo"] if members else "")
+
             item_payload = {
                 'TeamID': t_id,
                 'Team Name': team.TeamName,
                 'Password': team.Password,
-                'Leader Name': team.LeaderName,
-                'Leader Email': team.LeaderEmail,
-                'Leader Phone': team.LeaderPhone,
-                'Leader RegNo': team.LeaderRegNo,
+                'Leader Name': leader_name,
+                'Leader Email': leader_email,
+                'Leader Phone': leader_phone,
+                'Leader RegNo': leader_reg_no,
                 'Transaction ID': team.TransactionID,
                 'Status': team.Status,
                 'Submitted At': team.SubmittedAt,
