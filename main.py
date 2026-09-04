@@ -16,6 +16,7 @@ app = FastAPI(
 )
 
 origins = [
+    "http://localhost:5173",
     "https://www.anc-anirudh.online",
     "https://disfrutar-frontend.vercel.app"
 ]
@@ -1039,9 +1040,12 @@ def import_data(req: ImportRequest):
         team_members_map = {}
         for p in req.participants:
             t_id = p.TeamId.strip()
-            if t_id not in team_members_map:
-                team_members_map[t_id] = []
-            team_members_map[t_id].append({
+            if not t_id:
+                continue
+            t_id_key = t_id.upper()
+            if t_id_key not in team_members_map:
+                team_members_map[t_id_key] = []
+            team_members_map[t_id_key].append({
                 "name": p.Name,
                 "regNo": p.RegNo,
                 "email": p.Email,
@@ -1059,7 +1063,9 @@ def import_data(req: ImportRequest):
         imported_count = 0
         for team in req.teams:
             t_id = team.TeamID.strip()
-            members = team_members_map.get(t_id, [])
+            if not t_id or t_id == 'SYSTEM_SETTINGS':
+                continue
+            members = team_members_map.get(t_id.upper(), team_members_map.get(t_id, []))
             
             existing_problem = None
             existing_link = None
