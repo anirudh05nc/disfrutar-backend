@@ -16,6 +16,7 @@ app = FastAPI(
 )
 
 origins = [
+    "https://www.anc-anirudh.online",
     "https://disfrutar-frontend.vercel.app"
 ]
 
